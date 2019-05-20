@@ -1,8 +1,8 @@
 import logging
 import os
 import string
-from concurrent.futures import ThreadPoolExecutor
-
+# from concurrent.futures import ThreadPoolExecutor
+import socket
 import boto3
 import escapism
 from jupyterhub.spawner import Spawner
@@ -22,6 +22,7 @@ class EcsTaskSpawner(Spawner):
     """
     ECS Task Spawner
     """
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
@@ -29,6 +30,8 @@ class EcsTaskSpawner(Spawner):
         self.log.info("function create_new_instance %s" % self.user.name)
         self.ecs_client = boto3.client('ecs')
         self.ec2_client = boto3.client('ec2')
+
+    # _executor = None
 
     strategy = Unicode(
         "ECSxEC2SpawnerHandler",
@@ -54,13 +57,13 @@ class EcsTaskSpawner(Spawner):
         """
     )
 
-    @property
-    def executor(self):
-        """single global executor"""
-        cls = self.__class__
-        if cls._executor is None:
-            cls._executor = ThreadPoolExecutor(1)
-        return cls._executor
+    # @property
+    # def executor(self):
+    #     """single global executor"""
+    #     cls = self.__class__
+    #     if cls._executor is None:
+    #         cls._executor = ThreadPoolExecutor(1)
+    #     return cls._executor
 
     def _get_spawner_handler(self):
         """
@@ -79,17 +82,17 @@ class EcsTaskSpawner(Spawner):
     @gen.coroutine
     def start(self):
         self.log.info("function start for user %s" % self.user.name)
-        handler = self._get_spawner_handler()
+        # handler = self._get_spawner_handler()
 
-        result = yield self.executor.submit(handler.start)
+        # result = yield self.executor.submit(handler.start)
 
-        return result
+        return (yield self._get_spawner_handler().start())
 
     @gen.coroutine
     def stop(self, now=False):
         self.log.info("function stop called for %s" % self.user.name)
 
-        return (yield  self._get_spawner_handler().stop())
+        return (yield self._get_spawner_handler().stop())
 
         self.clear_state()
 
@@ -104,6 +107,7 @@ class SpawnerHandler(LoggingConfigurable):
     """
     Generic Handler
     """
+
     def __init__(self, spawner, **kwargs):
         self.spawner = spawner
         self.user = spawner.user
@@ -263,7 +267,8 @@ class ECSSpawnerHandler(SpawnerHandler):
         self.log.info("function get task definition for user %s" % self.user.name)
 
         if self.ecs_task_definition != '':
-            task_def = self.ecs_client.describe_task_definition(taskDefinition=self.ecs_task_definition)['taskDefinition']
+            task_def = self.ecs_client.describe_task_definition(taskDefinition=self.ecs_task_definition)[
+                'taskDefinition']
             return task_def['taskDefinitionArn']
 
         task_def = {
@@ -314,8 +319,9 @@ class ECSSpawnerHandler(SpawnerHandler):
     def get_env(self):
         env = super().get_env()
 
-        env['JPY_HUB_API_URL'] = 'http://' + os.environ.get('HUB_HOST_IP', '127.0.0.1') + ':8081/jupyter/hub/api'
-        # env['JPY_HUB_API_URL'] = self.hub.api_url
+        ip = socket.gethostbyname(socket.gethostname())
+
+        env['JPY_HUB_API_URL'] = f'http://{os.environ.get("HUB_HOST_IP", ip)}:8081/jupyter/hub/api'
         env['JPY_HUB_PREFIX'] = self.hub.server.base_url
 
         env.update(dict(
@@ -336,7 +342,7 @@ class ECSxEC2SpawnerHandler(ECSSpawnerHandler):
         "",
         config=True,
         help="""
-        Name of the EC2 Instance Template to be used when creaing a EC2 Instance
+        Name of the EC2 Instance Template to be used when creating a EC2 Instance
         """
     )
 
@@ -344,7 +350,7 @@ class ECSxEC2SpawnerHandler(ECSSpawnerHandler):
         "",
         config=True,
         help="""
-        Version of the EC2 Instance Template to be used when creaing a EC2 Instance
+        Version of the EC2 Instance Template to be used when creating a EC2 Instance
         """
     )
 
@@ -356,7 +362,7 @@ class ECSxEC2SpawnerHandler(ECSSpawnerHandler):
     )
 
     def __init__(self, spawner, ec2_instance_template=None,
-                 ec2_instance_template_version='1',
+                 ec2_instance_template_version='13',
                  port=8888, **kwargs):
 
         super().__init__(spawner, **kwargs)
@@ -377,20 +383,21 @@ class ECSxEC2SpawnerHandler(ECSSpawnerHandler):
     def stop(self):
         task = yield self.get_task()
         if task:
+            self.ecs_client.stop_task(cluster=self.cluster_name, task=task['taskArn'])
             # Stop the Instance Itself
-            container_instance_arn = task['containerInstanceArn']
-            container_instance = self.ecs_client.describe_container_instances(
-                cluster=self.cluster_name,
-                containerInstances=[
-                    container_instance_arn
-                ]
-            )['containerInstances'][0]
-
-            self.ec2_client.terminate_instances(InstanceIds=[
-                    container_instance['ec2InstanceId']
-                ],
-                DryRun=False
-            )
+            # container_instance_arn = task['containerInstanceArn']
+            # container_instance = self.ecs_client.describe_container_instances(
+            #     cluster=self.cluster_name,
+            #     containerInstances=[
+            #         container_instance_arn
+            #     ]
+            # )['containerInstances'][0]
+            #
+            # self.ec2_client.terminate_instances(InstanceIds=[
+            #     container_instance['ec2InstanceId']
+            # ],
+            #     DryRun=False
+            # )
 
         else:
             self.log.info("No ECS task found to be stopped %s" % self.user.name)
@@ -399,18 +406,16 @@ class ECSxEC2SpawnerHandler(ECSSpawnerHandler):
     def poll(self):
         task = yield self.get_task()
         if task:
-            return None # Still running
+            return None  # Still running
         else:
             return 0
 
     @gen.coroutine
     def _create_new_task(self):
         self.log.info("function create new task for user %s" % self.user.name)
-        task_def_arn =  yield self._get_task_definition()
+        task_def_arn = yield self._get_task_definition()
 
-        instance = yield self._create_instance()
-
-        selected_container_instance = yield self._get_container_instance(instance['InstanceId'])
+        selected_container_instance = yield self._get_user_instance()
 
         env = self.get_env()
         env['JPY_USER'] = self.user.name
@@ -422,31 +427,40 @@ class ECSxEC2SpawnerHandler(ECSSpawnerHandler):
         self.log.info("starting ecs task for user %s" % self.user.name)
 
         task = self.ecs_client.start_task(taskDefinition=task_def_arn,
-           cluster=self.cluster_name,
-           startedBy=self._get_task_identifier(),
-           overrides={
-               'containerOverrides': [
-                   {
-                       'name': 'adp-notebook-ecs',
-                       'environment': container_env
-                   }
-               ]
-           },
-           containerInstances=[selected_container_instance['containerInstanceArn']]
-        )['tasks'][0]
+                                          cluster=self.cluster_name,
+                                          startedBy=self._get_task_identifier(),
+                                          containerInstances=[selected_container_instance['containerInstanceArn']],
+                                          overrides={
+                                              'containerOverrides': [
+                                                  {
+                                                      'name': 'jupyter-instance',
+                                                      'environment': container_env
+                                                  }
+                                              ]
+                                          },
+                                          )
+        self.log.info(task)
+        task = task['tasks'][0]
 
         waiter = self.ecs_client.get_waiter('tasks_running')
         waiter.wait(cluster=self.cluster_name, tasks=[task['taskArn']])
 
         self.log.info("ecs task up and running for %s" % self.user.name)
 
-        return instance['NetworkInterfaces'][0]['PrivateIpAddress']
+        return selected_container_instance['NetworkInterfaces'][0]['PrivateIpAddress']
+
+    @gen.coroutine
+    def _get_user_instance(self):
+        self.log.info("function get user instance for user %s" % self.user.name)
+        # For now - one instance per user. TODO: Multiple users per instance, based on instance resources.
+        instance = yield self._get_container_instance()
+        return instance or (yield self._create_instance())
 
     @gen.coroutine
     def _create_instance(self):
 
         self.log.info("function create instance for user %s" % self.user.name)
-        environment_name = os.environ.get('HUB_ENVIRONMENT', 'JupyterHUB')
+        environment_name = os.environ.get('HUB_ENVIRONMENT', 'OodleJupyterHub')
         ec2_name = environment_name + '-' + self.user.name
 
         instance = self.ec2_client.run_instances(
@@ -481,26 +495,37 @@ class ECSxEC2SpawnerHandler(ECSSpawnerHandler):
         waiter = self.ec2_client.get_waiter('instance_status_ok')
         waiter.wait(InstanceIds=[instance['InstanceId']])
 
-        instance = self.ec2_client.describe_instances(InstanceIds=[instance['InstanceId']])['Reservations'][0]['Instances'][0]
+        instance = \
+            self.ec2_client.describe_instances(InstanceIds=[instance['InstanceId']])['Reservations'][0]['Instances'][0]
 
+        self.ec2_instance_info = instance
         return instance
 
     @gen.coroutine
-    def _get_container_instance(self, ec2_instance_id):
+    def _get_container_instance(self):
         """
-        Look for container instance related to the instance ID created
+        Look for container instance related to user name
         :param ec2_instance_id:
         :return:
         """
 
-        selected_container_instance = None
-        container_instances_arns = self.ecs_client.list_container_instances(cluster=self.cluster_name)['containerInstanceArns']
-        container_instances = self.ecs_client.describe_container_instances(cluster=self.cluster_name, containerInstances=container_instances_arns)['containerInstances']
-        for container_instance in container_instances:
-            if container_instance['ec2InstanceId'] == ec2_instance_id:
-                selected_container_instance = container_instance
+        container_instances_arns = self.ecs_client.list_container_instances(cluster=self.cluster_name)[
+            'containerInstanceArns']
+        if len(container_instances_arns) < 1:
+            return None
+        container_instances = self.ecs_client.describe_container_instances(
+            cluster=self.cluster_name,
+            containerInstances=container_instances_arns)['containerInstances']
 
-        return selected_container_instance
+        for container_instance in container_instances:
+            instance = self.ec2_client.describe_instances(
+                InstanceIds=[container_instance['ec2InstanceId']])['Reservations'][0]['Instances'][0]
+
+            if any(self.user.name in x['Value'] for x in instance['Tags']):
+                self.log.info(f"found instance for user {self.user.name}\n{instance}")
+                return {**instance, **container_instance}
+
+        return None
 
     def _expand_user_properties(self, template):
         # Make sure username and servername match the restrictions for DNS labels
