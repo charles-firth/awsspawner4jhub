@@ -367,7 +367,9 @@ class ECSxEC2SpawnerHandler(ECSSpawnerHandler):
 
         super().__init__(spawner, **kwargs)
         self.ec2_instance_template = ec2_instance_template
-        self.ec2_instance_template_version = ec2_instance_template_version
+        vers = len(self.ec2_client.describe_launch_template_versions(LaunchTemplateName=self.ec2_instance_template))
+        # Always use the latest version
+        self.ec2_instance_template_version = vers - 1
         if port:
             self.port = port
 
@@ -385,14 +387,17 @@ class ECSxEC2SpawnerHandler(ECSSpawnerHandler):
         if task:
             self.ecs_client.stop_task(cluster=self.cluster_name, task=task['taskArn'])
             # Stop the Instance Itself
-            # container_instance_arn = task['containerInstanceArn']
-            # container_instance = self.ecs_client.describe_container_instances(
-            #     cluster=self.cluster_name,
-            #     containerInstances=[
-            #         container_instance_arn
-            #     ]
-            # )['containerInstances'][0]
-            #
+            container_instance_arn = task['containerInstanceArn']
+            container_instance = self.ecs_client.describe_container_instances(
+                cluster=self.cluster_name,
+                containerInstances=[
+                    container_instance_arn
+                ]
+            )['containerInstances'][0]
+
+            # TODO: Change this when having multiple users per instance
+            self.ec2_client.stop_instances(InstanceIds=[container_instance['ec2InstanceId']])
+
             # self.ec2_client.terminate_instances(InstanceIds=[
             #     container_instance['ec2InstanceId']
             # ],
@@ -439,7 +444,7 @@ class ECSxEC2SpawnerHandler(ECSSpawnerHandler):
                                               ]
                                           },
                                           )
-        self.log.info(task)
+
         task = task['tasks'][0]
 
         waiter = self.ecs_client.get_waiter('tasks_running')
@@ -458,13 +463,11 @@ class ECSxEC2SpawnerHandler(ECSSpawnerHandler):
 
     @gen.coroutine
     def _create_instance(self):
-
         self.log.info("function create instance for user %s" % self.user.name)
         environment_name = os.environ.get('HUB_ENVIRONMENT', 'OodleJupyterHub')
         ec2_name = environment_name + '-' + self.user.name
 
         instance = self.ec2_client.run_instances(
-            # Use the official ECS image
             MinCount=1,
             MaxCount=1,
             LaunchTemplate={
@@ -505,7 +508,6 @@ class ECSxEC2SpawnerHandler(ECSSpawnerHandler):
     def _get_container_instance(self):
         """
         Look for container instance related to user name
-        :param ec2_instance_id:
         :return:
         """
 
@@ -522,7 +524,13 @@ class ECSxEC2SpawnerHandler(ECSSpawnerHandler):
                 InstanceIds=[container_instance['ec2InstanceId']])['Reservations'][0]['Instances'][0]
 
             if any(self.user.name in x['Value'] for x in instance['Tags']):
+                instance_state = instance['State']['Name']
+                if instance_state == "terminated":
+                    continue
                 self.log.info(f"found instance for user {self.user.name}\n{instance}")
+                if not instance_state == 'running':
+                    self.log.info(f"starting instance for user {self.user.name}\n{instance}")
+                    self.ec2_client.start_instances(InstanceIds=[container_instance['ec2InstanceId']])
                 return {**instance, **container_instance}
 
         return None
