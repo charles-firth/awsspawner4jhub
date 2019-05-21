@@ -369,7 +369,7 @@ class ECSxEC2SpawnerHandler(ECSSpawnerHandler):
         self.ec2_instance_template = ec2_instance_template
         vers = len(self.ec2_client.describe_launch_template_versions(LaunchTemplateName=self.ec2_instance_template))
         # Always use the latest version
-        self.ec2_instance_template_version = vers - 1
+        self.ec2_instance_template_version = vers
         if port:
             self.port = port
 
