@@ -367,7 +367,7 @@ class ECSxEC2SpawnerHandler(ECSSpawnerHandler):
 
         super().__init__(spawner, **kwargs)
         self.ec2_instance_template = ec2_instance_template
-        vers = len(self.ec2_client.describe_launch_template_versions(LaunchTemplateName=self.ec2_instance_template))
+        vers = str(len(self.ec2_client.describe_launch_template_versions(LaunchTemplateName=self.ec2_instance_template)))
         # Always use the latest version
         self.ec2_instance_template_version = vers
         if port:
@@ -463,7 +463,7 @@ class ECSxEC2SpawnerHandler(ECSSpawnerHandler):
 
     @gen.coroutine
     def _create_instance(self):
-        self.log.info("function create instance for user %s" % self.user.name)
+        self.log.info("function create instance for user %s template %s" % self.user.name, self.ec2_instance_template)
         environment_name = os.environ.get('HUB_ENVIRONMENT', 'OodleJupyterHub')
         ec2_name = environment_name + '-' + self.user.name
 
