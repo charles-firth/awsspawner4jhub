@@ -367,9 +367,9 @@ class ECSxEC2SpawnerHandler(ECSSpawnerHandler):
 
         super().__init__(spawner, **kwargs)
         self.ec2_instance_template = ec2_instance_template
-        vers = str(len(self.ec2_client.describe_launch_template_versions(LaunchTemplateName=self.ec2_instance_template)['LaunchTemplateVersions']))
+        latest_ver = str(len(self.ec2_client.describe_launch_template_versions(LaunchTemplateName=self.ec2_instance_template)['LaunchTemplateVersions']))
         # Always use the latest version
-        self.ec2_instance_template_version = vers
+        self.ec2_instance_template_version = latest_ver
         if port:
             self.port = port
 
@@ -396,7 +396,7 @@ class ECSxEC2SpawnerHandler(ECSSpawnerHandler):
             )['containerInstances'][0]
 
             # TODO: Change this when having multiple users per instance
-            self.ec2_client.stop_instances(InstanceIds=[container_instance['ec2InstanceId']])
+            self.ec2_client.stop_instances(InstanceIds=[container_instance['ec2InstanceId']], Hibernate=True)
 
             # self.ec2_client.terminate_instances(InstanceIds=[
             #     container_instance['ec2InstanceId']
