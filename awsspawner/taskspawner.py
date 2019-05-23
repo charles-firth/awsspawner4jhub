@@ -523,7 +523,7 @@ class ECSxEC2SpawnerHandler(ECSSpawnerHandler):
             instance = self.ec2_client.describe_instances(
                 InstanceIds=[container_instance['ec2InstanceId']])['Reservations'][0]['Instances'][0]
 
-            if any(self.user.name in x['Value'] for x in instance['Tags']):
+            if instance.get('Tags') is not None and any(self.user.name in x['Value'] for x in instance['Tags']):
                 instance_state = instance['State']['Name']
                 if instance_state == "terminated":
                     continue
