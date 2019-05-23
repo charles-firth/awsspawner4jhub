@@ -444,7 +444,7 @@ class ECSxEC2SpawnerHandler(ECSSpawnerHandler):
                                               ]
                                           },
                                           )
-
+        print(task)
         task = task['tasks'][0]
 
         waiter = self.ecs_client.get_waiter('tasks_running')
