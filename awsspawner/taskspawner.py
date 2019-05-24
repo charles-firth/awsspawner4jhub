@@ -438,7 +438,7 @@ class ECSxEC2SpawnerHandler(ECSSpawnerHandler):
                                           overrides={
                                               'containerOverrides': [
                                                   {
-                                                      'name': 'jupyter-instance',
+                                                      'name': 'notebook',
                                                       'environment': container_env
                                                   }
                                               ]
