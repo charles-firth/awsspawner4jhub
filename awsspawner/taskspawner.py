@@ -397,7 +397,9 @@ class ECSxEC2SpawnerHandler(ECSSpawnerHandler):
 
             # TODO: Change this when having multiple users per instance
             self.log.info(f'Stopping instance {container_instance["ec2InstanceId"]} for user {self.user.name}')
-            self.ec2_client.stop_instances(InstanceIds=[container_instance['ec2InstanceId']], Hibernate=True)
+            stop_resp = self.ec2_client.stop_instances(InstanceIds=[container_instance['ec2InstanceId']], Hibernate=True)
+            self.log.info(stop_resp)
+            return True
 
             # self.ec2_client.terminate_instances(InstanceIds=[
             #     container_instance['ec2InstanceId']
