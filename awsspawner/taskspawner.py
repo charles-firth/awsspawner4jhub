@@ -387,16 +387,16 @@ class ECSxEC2SpawnerHandler(ECSSpawnerHandler):
         if task:
             self.ecs_client.stop_task(cluster=self.cluster_name, task=task['taskArn'])
             # Stop the Instance Itself
-            # container_instance_arn = task['containerInstanceArn']
-            # container_instance = self.ecs_client.describe_container_instances(
-            #     cluster=self.cluster_name,
-            #     containerInstances=[
-            #         container_instance_arn
-            #     ]
-            # )['containerInstances'][0]
-            #
-            # # TODO: Change this when having multiple users per instance
-            # self.ec2_client.stop_instances(InstanceIds=[container_instance['ec2InstanceId']], Hibernate=True)
+            container_instance_arn = task['containerInstanceArn']
+            container_instance = self.ecs_client.describe_container_instances(
+                cluster=self.cluster_name,
+                containerInstances=[
+                    container_instance_arn
+                ]
+            )['containerInstances'][0]
+
+            # TODO: Change this when having multiple users per instance
+            self.ec2_client.stop_instances(InstanceIds=[container_instance['ec2InstanceId']], Hibernate=True)
 
             # self.ec2_client.terminate_instances(InstanceIds=[
             #     container_instance['ec2InstanceId']
