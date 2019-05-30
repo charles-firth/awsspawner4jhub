@@ -3,6 +3,8 @@ import os
 import string
 from concurrent.futures import ThreadPoolExecutor
 import socket
+from time import sleep
+
 import boto3
 import escapism
 from jupyterhub.spawner import Spawner
@@ -51,7 +53,7 @@ class EcsTaskSpawner(Spawner):
         self.ecs_client = boto3.client('ecs')
         self.ec2_client = boto3.client('ec2')
 
-    # _executor = None
+    _executor = None
 
     strategy = Unicode(
         "ECSxEC2SpawnerHandler",
@@ -77,13 +79,13 @@ class EcsTaskSpawner(Spawner):
         """
     )
 
-    # @property
-    # def executor(self):
-    #     """single global executor"""
-    #     cls = self.__class__
-    #     if cls._executor is None:
-    #         cls._executor = ThreadPoolExecutor(1)
-    #     return cls._executor
+    @property
+    def executor(self):
+        """single global executor"""
+        cls = self.__class__
+        if cls._executor is None:
+            cls._executor = ThreadPoolExecutor(1)
+        return cls._executor
 
     def _get_spawner_handler(self):
         """
@@ -105,6 +107,8 @@ class EcsTaskSpawner(Spawner):
         # handler = self._get_spawner_handler()
 
         # result = yield self.executor.submit(handler.start)
+        #
+        # return result.result(timeout=200)
 
         return (yield self._get_spawner_handler().start())
 
@@ -525,12 +529,12 @@ class ECSxEC2SpawnerHandler(ECSSpawnerHandler):
 
         waiter = self.ec2_client.get_waiter('instance_status_ok')
 
-        yield self._await_instance_ecs(instance['InstanceId'])
-        # yield waiter.wait(InstanceIds=[instance['InstanceId']])
+        arn = yield self._await_instance_ecs(instance['InstanceId'])
+        # waiter.wait(InstanceIds=[instance['InstanceId']])
 
         instance = \
             self.ec2_client.describe_instances(InstanceIds=[instance['InstanceId']])['Reservations'][0]['Instances'][0]
-
+        instance['containerInstanceArn'] = arn
         self.ec2_instance_info = instance
         return instance
 
@@ -538,12 +542,13 @@ class ECSxEC2SpawnerHandler(ECSSpawnerHandler):
     def _await_instance_ecs(self, instance_id):
         def _wait_instance_registered(self, instance_id):
             while True:
+                sleep(5)
                 instances = self.ecs_client.list_container_instances(cluster=self.cluster_name,
                                                                      filter=f'ec2InstanceId == {instance_id}')['containerInstanceArns']
                 self.log.info(f'Waiting for >0 instances. Found: {instances}')
                 if len(instances) > 0:
-                    break
-                gen.sleep(5)
+                    return instances[0]
+
         ret = yield self.thread_pool.submit(_wait_instance_registered, self, instance_id)
         return ret
 
