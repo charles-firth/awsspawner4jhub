@@ -7,15 +7,35 @@ import boto3
 import escapism
 from jupyterhub.spawner import Spawner
 from tornado import gen
+from tornado.platform.asyncio import AnyThreadEventLoopPolicy
 from traitlets import (
     Integer,
     Unicode,
     Dict
 )
 from traitlets.config import LoggingConfigurable
+import asyncio
+
+asyncio.set_event_loop_policy(AnyThreadEventLoopPolicy())
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
+
+thread_pool = ThreadPoolExecutor(5)
+
+
+@gen.coroutine
+def _run_async(function, *args, **kwargs):
+    retries = 10
+    logger.info(f'[ASYNC] Running {function} with {args}')
+    for retry in range(retries):
+        try:
+            ret = yield thread_pool.submit(function, *args, **kwargs)
+            return ret
+        except Exception as e:
+            logger.info(
+                f'Encountered exception \n{e}\n while attempting to run {function} {args} - retrying {retry}/{retries}')
+            yield gen.sleep(1)
 
 
 class EcsTaskSpawner(Spawner):
@@ -129,6 +149,7 @@ class SpawnerHandler(LoggingConfigurable):
     @gen.coroutine
     def poll(self):
         pass
+
 
 #
 # class EC2SpawnerHandler(SpawnerHandler):
@@ -367,7 +388,9 @@ class ECSxEC2SpawnerHandler(ECSSpawnerHandler):
 
         super().__init__(spawner, **kwargs)
         self.ec2_instance_template = ec2_instance_template
-        latest_ver = str(len(self.ec2_client.describe_launch_template_versions(LaunchTemplateName=self.ec2_instance_template)['LaunchTemplateVersions']))
+        latest_ver = str(len(
+            self.ec2_client.describe_launch_template_versions(LaunchTemplateName=self.ec2_instance_template)[
+                'LaunchTemplateVersions']))
         # Always use the latest version
         self.ec2_instance_template_version = latest_ver
         self.thread_pool = ThreadPoolExecutor(5)
@@ -398,7 +421,8 @@ class ECSxEC2SpawnerHandler(ECSSpawnerHandler):
 
             # TODO: Change this when having multiple users per instance
             self.log.info(f'Stopping instance {container_instance["ec2InstanceId"]} for user {self.user.name}')
-            stop_resp = self.ec2_client.stop_instances(InstanceIds=[container_instance['ec2InstanceId']], Hibernate=True)
+            stop_resp = self.ec2_client.stop_instances(InstanceIds=[container_instance['ec2InstanceId']],
+                                                       Hibernate=True)
             self.log.info(stop_resp)
             return True
 
@@ -458,7 +482,6 @@ class ECSxEC2SpawnerHandler(ECSSpawnerHandler):
 
         return selected_container_instance['NetworkInterfaces'][0]['PrivateIpAddress']
 
-
     @gen.coroutine
     def _get_user_instance(self):
         self.log.info("function get user instance for user %s" % self.user.name)
@@ -501,7 +524,8 @@ class ECSxEC2SpawnerHandler(ECSSpawnerHandler):
         )['Instances'][0]
 
         waiter = self.ec2_client.get_waiter('instance_status_ok')
-        yield self._run_async(waiter.wait, instance['InstanceId'])
+
+        yield self._await_instance_ecs(instance['InstanceId'])
         # yield waiter.wait(InstanceIds=[instance['InstanceId']])
 
         instance = \
@@ -511,17 +535,17 @@ class ECSxEC2SpawnerHandler(ECSSpawnerHandler):
         return instance
 
     @gen.coroutine
-    def _run_async(self, function, *args, **kwargs):
-        retries = 10
-        for retry in range(retries):
-            try:
-                ret = yield self.thread_pool.submit(function, *args)
-                return ret
-            except Exception as e:
-                self.log.info(f'Encountered exception \n{e}\n while attempting to run {function} - retrying {retry}/{retries}')
-                yield gen.sleep(1)
-
-
+    def _await_instance_ecs(self, instance_id):
+        def _wait_instance_registered(self, instance_id):
+            while True:
+                instances = self.ecs_client.list_container_instances(cluster=self.cluster_name,
+                                                                     filter=f'ec2InstanceId == {instance_id}')['containerInstanceArns']
+                self.log.info(f'Waiting for >0 instances. Found: {instances}')
+                if len(instances) > 0:
+                    break
+                gen.sleep(5)
+        ret = yield self.thread_pool.submit(_wait_instance_registered, self, instance_id)
+        return ret
 
     def _get_container_instance(self):
         """
