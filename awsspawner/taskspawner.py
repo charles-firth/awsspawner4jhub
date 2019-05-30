@@ -527,10 +527,7 @@ class ECSxEC2SpawnerHandler(ECSSpawnerHandler):
             ]
         )['Instances'][0]
 
-        waiter = self.ec2_client.get_waiter('instance_status_ok')
-
         arn = yield self._await_instance_ecs(instance['InstanceId'])
-        # waiter.wait(InstanceIds=[instance['InstanceId']])
 
         instance = \
             self.ec2_client.describe_instances(InstanceIds=[instance['InstanceId']])['Reservations'][0]['Instances'][0]
