@@ -1,7 +1,7 @@
 import logging
 import os
 import string
-# from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor
 import socket
 import boto3
 import escapism
@@ -72,11 +72,11 @@ class EcsTaskSpawner(Spawner):
         """
         if self.strategy == 'ECSxEC2SpawnerHandler':
             return ECSxEC2SpawnerHandler(self, **self.strategy_parms)
-        if self.strategy == 'ECSSpawnerHandler':
-            return ECSSpawnerHandler(self, **self.strategy_parms)
-        if self.strategy == 'EC2SpawnerHandler':
-            return EC2SpawnerHandler(self, **self.strategy_parms)
-
+        # if self.strategy == 'ECSSpawnerHandler':
+        #     return ECSSpawnerHandler(self, **self.strategy_parms)
+        # if self.strategy == 'EC2SpawnerHandler':
+        #     return EC2SpawnerHandler(self, **self.strategy_parms)
+        #
         raise ValueError("Strategy not properly specified")
 
     @gen.coroutine
@@ -130,37 +130,37 @@ class SpawnerHandler(LoggingConfigurable):
     def poll(self):
         pass
 
-
-class EC2SpawnerHandler(SpawnerHandler):
-    """
-        Using EC2
-    """
-    ec2_instance_template = Unicode(
-        "",
-        config=True,
-        help="""
-        Name of the EC2 Instance Template to be used when creaing a EC2 Instance.
-        This property is used when ecs_task_on_ec2_instance is set to True.
-        """
-    )
-
-    def __init__(self, spawner, ec2_instance_template, **kwargs):
-        super().__init__(spawner, **kwargs)
-        self.ec2_instance_template = ec2_instance_template
-
-    @gen.coroutine
-    def start(self):
-        pass
-
-    @gen.coroutine
-    def stop(self):
-        pass
-
-    @gen.coroutine
-    def poll(self):
-        pass
-
-
+#
+# class EC2SpawnerHandler(SpawnerHandler):
+#     """
+#         Using EC2
+#     """
+#     ec2_instance_template = Unicode(
+#         "",
+#         config=True,
+#         help="""
+#         Name of the EC2 Instance Template to be used when creaing a EC2 Instance.
+#         This property is used when ecs_task_on_ec2_instance is set to True.
+#         """
+#     )
+#
+#     def __init__(self, spawner, ec2_instance_template, **kwargs):
+#         super().__init__(spawner, **kwargs)
+#         self.ec2_instance_template = ec2_instance_template
+#
+#     @gen.coroutine
+#     def start(self):
+#         pass
+#
+#     @gen.coroutine
+#     def stop(self):
+#         pass
+#
+#     @gen.coroutine
+#     def poll(self):
+#         pass
+#
+#
 class ECSSpawnerHandler(SpawnerHandler):
     """
         Using ECS Task:
@@ -370,6 +370,7 @@ class ECSxEC2SpawnerHandler(ECSSpawnerHandler):
         latest_ver = str(len(self.ec2_client.describe_launch_template_versions(LaunchTemplateName=self.ec2_instance_template)['LaunchTemplateVersions']))
         # Always use the latest version
         self.ec2_instance_template_version = latest_ver
+        self.thread_pool = ThreadPoolExecutor(5)
         if port:
             self.port = port
 
@@ -457,6 +458,7 @@ class ECSxEC2SpawnerHandler(ECSSpawnerHandler):
 
         return selected_container_instance['NetworkInterfaces'][0]['PrivateIpAddress']
 
+
     @gen.coroutine
     def _get_user_instance(self):
         self.log.info("function get user instance for user %s" % self.user.name)
@@ -499,7 +501,8 @@ class ECSxEC2SpawnerHandler(ECSSpawnerHandler):
         )['Instances'][0]
 
         waiter = self.ec2_client.get_waiter('instance_status_ok')
-        waiter.wait(InstanceIds=[instance['InstanceId']])
+        yield self._run_async(waiter.wait, instance['InstanceId'])
+        # yield waiter.wait(InstanceIds=[instance['InstanceId']])
 
         instance = \
             self.ec2_client.describe_instances(InstanceIds=[instance['InstanceId']])['Reservations'][0]['Instances'][0]
@@ -508,6 +511,18 @@ class ECSxEC2SpawnerHandler(ECSSpawnerHandler):
         return instance
 
     @gen.coroutine
+    def _run_async(self, function, *args, **kwargs):
+        retries = 10
+        for retry in range(retries):
+            try:
+                ret = yield self.thread_pool.submit(function, *args)
+                return ret
+            except Exception as e:
+                self.log.info(f'Encountered exception \n{e}\n while attempting to run {function} - retrying {retry}/{retries}')
+                yield gen.sleep(1)
+
+
+
     def _get_container_instance(self):
         """
         Look for container instance related to user name
