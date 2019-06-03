@@ -575,6 +575,10 @@ class ECSxEC2SpawnerHandler(ECSSpawnerHandler):
                 if not instance_state == 'running':
                     self.log.info(f"starting instance for user {self.user.name}\n{instance}")
                     self.ec2_client.start_instances(InstanceIds=[container_instance['ec2InstanceId']])
+                    arn = yield self._await_instance_ecs(instance['InstanceId'])
+                    instance = self.ec2_client.describe_instances(
+                        InstanceIds=[container_instance['ec2InstanceId']])['Reservations'][0]['Instances'][0]
+                self.log.info(f'returning from find_instance.. {instance}\n{container_instance}')
                 return {**instance, **container_instance}
 
         return None
