@@ -484,10 +484,9 @@ class ECSxEC2SpawnerHandler(ECSSpawnerHandler):
             elif tries <= max:
                 tries += 1
                 self.log.info(f'Task launched failed - retrying {tries}/{max}: {task.get("failures")}')
-                sleep(5)
+                sleep(20)
             else:
-                self.log.info(f'Could not launch task for {self.user.name} on {selected_container_instance["containerInstanceArn"]}')
-                return None
+                raise Exception(f'Could not launch task for {self.user.name} on {selected_container_instance["containerInstanceArn"]}')
 
         # self.log.info(task)
         task = task['tasks'][0]
