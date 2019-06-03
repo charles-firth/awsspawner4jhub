@@ -461,7 +461,7 @@ class ECSxEC2SpawnerHandler(ECSSpawnerHandler):
 
         container_env = self._expand_env(env)
 
-        self.log.info("starting ecs task for user %s" % self.user.name)
+        self.log.info(f"starting ecs task for user {self.user.name} / selected instance {selected_container_instance}")
 
         task = self.ecs_client.start_task(taskDefinition=task_def_arn,
                                           cluster=self.cluster_name,
@@ -549,6 +549,7 @@ class ECSxEC2SpawnerHandler(ECSSpawnerHandler):
         ret = yield self.thread_pool.submit(_wait_instance_registered, self, instance_id)
         return ret
 
+    @gen.coroutine
     def _get_container_instance(self):
         """
         Look for container instance related to user name
