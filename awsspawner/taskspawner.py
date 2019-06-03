@@ -463,20 +463,33 @@ class ECSxEC2SpawnerHandler(ECSSpawnerHandler):
 
         self.log.info(f"starting ecs task for user {self.user.name} / selected instance {selected_container_instance}")
 
-        task = self.ecs_client.start_task(taskDefinition=task_def_arn,
-                                          cluster=self.cluster_name,
-                                          startedBy=self._get_task_identifier(),
-                                          containerInstances=[selected_container_instance['containerInstanceArn']],
-                                          overrides={
-                                              'containerOverrides': [
-                                                  {
-                                                      'name': 'notebook',
-                                                      'environment': container_env
-                                                  }
-                                              ]
-                                          },
-                                          )
-        self.log.info(task)
+        tries = 0
+        max = 5
+        while True:
+            task = self.ecs_client.start_task(taskDefinition=task_def_arn,
+                                              cluster=self.cluster_name,
+                                              startedBy=self._get_task_identifier(),
+                                              containerInstances=[selected_container_instance['containerInstanceArn']],
+                                              overrides={
+                                                  'containerOverrides': [
+                                                      {
+                                                          'name': 'notebook',
+                                                          'environment': container_env
+                                                      }
+                                                  ]
+                                              },
+                                              )
+            if not task.get('failures', False):
+                break
+            elif tries <= max:
+                tries += 1
+                self.log.info(f'Task launched failed - retrying {tries}/{max}: {task.get("failures")}')
+                sleep(5)
+            else:
+                self.log.info(f'Could not launch task for {self.user.name} on {selected_container_instance["containerInstanceArn"]}')
+                return None
+
+        # self.log.info(task)
         task = task['tasks'][0]
 
         waiter = self.ecs_client.get_waiter('tasks_running')
