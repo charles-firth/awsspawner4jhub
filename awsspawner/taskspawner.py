@@ -495,9 +495,18 @@ class ECSxEC2SpawnerHandler(ECSSpawnerHandler):
 
         # self.log.info(task)
         task = task['tasks'][0]
+        tries = 0
 
-        waiter = self.ecs_client.get_waiter('tasks_running')
-        waiter.wait(cluster=self.cluster_name, tasks=[task['taskArn']])
+        try:
+            waiter = self.ecs_client.get_waiter('tasks_running')
+            waiter.wait(cluster=self.cluster_name, tasks=[task['taskArn']])
+        except Exception as e:
+            if tries > max:
+                raise e
+            self.log.info(f'Waiter exited early {e} - retrying {tries}/{max}')
+            tries += 1
+            sleep(20)
+
 
         self.log.info("ecs task up and running for %s" % self.user.name)
 
