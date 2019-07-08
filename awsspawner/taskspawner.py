@@ -386,6 +386,13 @@ class ECSxEC2SpawnerHandler(ECSSpawnerHandler):
         """
     )
 
+    server_types = {
+        'xsmall': 't3.small',
+        'small': 'r5.large',
+        'medium': 'r5.xlarge',
+        'large': 'r5.2xlarge'
+    }
+
     def __init__(self, spawner, ec2_instance_template=None,
                  ec2_instance_template_version='13',
                  port=8888, **kwargs):
@@ -402,10 +409,11 @@ class ECSxEC2SpawnerHandler(ECSSpawnerHandler):
             self.port = port
 
     @gen.coroutine
-    def start(self):
+    def start(self, server_type=None):
+        print(server_type)
         task = yield self.get_task()
         if task is None:
-            ip_address = yield self._create_new_task()
+            ip_address = yield self._create_new_task(server_type)
             return ip_address, self.port
         # TODO
 
@@ -448,11 +456,11 @@ class ECSxEC2SpawnerHandler(ECSSpawnerHandler):
             return 0
 
     @gen.coroutine
-    def _create_new_task(self):
+    def _create_new_task(self, server_type):
         self.log.info("function create new task for user %s" % self.user.name)
         task_def_arn = yield self._get_task_definition()
 
-        selected_container_instance = yield self._get_user_instance()
+        selected_container_instance = yield self._get_user_instance(server_type)
 
         env = self.get_env()
         env['JPY_USER'] = self.user.name
@@ -513,14 +521,14 @@ class ECSxEC2SpawnerHandler(ECSSpawnerHandler):
         return selected_container_instance['NetworkInterfaces'][0]['PrivateIpAddress']
 
     @gen.coroutine
-    def _get_user_instance(self):
+    def _get_user_instance(self, server_type):
         self.log.info("function get user instance for user %s" % self.user.name)
         # For now - one instance per user. TODO: Multiple users per instance, based on instance resources.
         instance = yield self._get_container_instance()
-        return instance or (yield self._create_instance())
+        return instance or (yield self._create_instance(server_type))
 
     @gen.coroutine
-    def _create_instance(self):
+    def _create_instance(self, server_type):
         self.log.info(f"function create instance for user {self.user.name} template {self.ec2_instance_template}")
         environment_name = os.environ.get('HUB_ENVIRONMENT', 'OodleJupyterHub')
         ec2_name = environment_name + '-' + self.user.name
@@ -528,6 +536,7 @@ class ECSxEC2SpawnerHandler(ECSSpawnerHandler):
         instance = self.ec2_client.run_instances(
             MinCount=1,
             MaxCount=1,
+            InstanceType=self.server_types[server_type],
             LaunchTemplate={
                 'LaunchTemplateName': self.ec2_instance_template,
                 'Version': self.ec2_instance_template_version
