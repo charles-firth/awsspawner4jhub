@@ -536,7 +536,7 @@ class ECSxEC2SpawnerHandler(ECSSpawnerHandler):
         instance = self.ec2_client.run_instances(
             MinCount=1,
             MaxCount=1,
-            InstanceType=self.server_types[server_type],
+            InstanceType=self.server_types.get(server_type, 't3.small'),
             LaunchTemplate={
                 'LaunchTemplateName': self.ec2_instance_template,
                 'Version': self.ec2_instance_template_version
