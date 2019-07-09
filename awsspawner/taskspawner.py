@@ -102,15 +102,16 @@ class EcsTaskSpawner(Spawner):
         raise ValueError("Strategy not properly specified")
 
     @gen.coroutine
-    def start(self):
+    def start(self, server_type=None):
         self.log.info("function start for user %s" % self.user.name)
+        print(self.user_options)
         # handler = self._get_spawner_handler()
 
         # result = yield self.executor.submit(handler.start)
         #
         # return result.result(timeout=200)
 
-        return (yield self._get_spawner_handler().start())
+        return (yield self._get_spawner_handler().start(self.user_options))
 
     @gen.coroutine
     def stop(self, now=False):
@@ -143,7 +144,7 @@ class SpawnerHandler(LoggingConfigurable):
         return self.spawner.get_env()
 
     @gen.coroutine
-    def start(self):
+    def start(self, server_type=None):
         pass
 
     @gen.coroutine
@@ -204,7 +205,7 @@ class ECSSpawnerHandler(SpawnerHandler):
         self.ecs_task_definition = ecs_task_definition
 
     @gen.coroutine
-    def start(self):
+    def start(self, server_type=None):
         task = yield self.get_task()
         if task is None:
             ip_address = yield self._create_new_task()
@@ -351,7 +352,7 @@ class ECSSpawnerHandler(SpawnerHandler):
 
         env.update(dict(
             JPY_USER=self.user.name,
-            JPY_COOKIE_NAME=self.user.server.cookie_name,
+            # JPY_COOKIE_NAME=self.user.server.cookie_name,
             JPY_BASE_URL=self.user.server.base_url,
             JPY_HUB_PREFIX=self.hub.server.base_url
         ))
@@ -536,7 +537,7 @@ class ECSxEC2SpawnerHandler(ECSSpawnerHandler):
         instance = self.ec2_client.run_instances(
             MinCount=1,
             MaxCount=1,
-            InstanceType=self.server_types.get(server_type, 't3.small'),
+            InstanceType=self.server_types.get(server_type['server'][0], 't3.small'),
             LaunchTemplate={
                 'LaunchTemplateName': self.ec2_instance_template,
                 'Version': self.ec2_instance_template_version
